@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class RiskClassification(str, Enum):
-    KNOWN_THREAT = "KNOWN THREAT DETECTED"
+    SAFE_INDICATORS = "SAFE INDICATORS"
     SUSPICIOUS = "SUSPICIOUS"
-    NO_KNOWN_THREAT = "NO KNOWN THREAT DETECTED"
+    UNSAFE_SPAM = "UNSAFE / SPAM"
     UNABLE_TO_VERIFY = "UNABLE TO VERIFY"
 
 

@@ -31,9 +31,9 @@ export const ScanResult: React.FC<ScanResultProps> = ({ result }) => {
 
   const getClassificationMeta = () => {
     switch (result.classification) {
-      case 'KNOWN THREAT DETECTED':
+      case 'UNSAFE / SPAM':
         return {
-          title: 'Known Threat Detected',
+          title: 'Unsafe / Spam',
           badgeClass: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
           gaugeColor: '#f43f5e',
           bgGlow: 'glow-rose',
@@ -49,14 +49,14 @@ export const ScanResult: React.FC<ScanResultProps> = ({ result }) => {
           icon: <AlertTriangle className="w-8 h-8 text-amber-400" />,
           advice: 'Local heuristic checks identified warning signs. Proceed with caution.',
         };
-      case 'NO KNOWN THREAT DETECTED':
+      case 'SAFE INDICATORS':
         return {
-          title: 'No Known Threat Detected',
+          title: 'Safe Indicators',
           badgeClass: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
           gaugeColor: '#10b981',
           bgGlow: 'glow-emerald',
           icon: <ShieldCheck className="w-8 h-8 text-emerald-400" />,
-          advice: 'Available checks found no known threats in evaluated sources. This is not a guarantee that the URL is safe.',
+          advice: 'Available checks completed without finding known threats or significant warning signs. This is not a guarantee of safety.',
         };
       case 'UNABLE TO VERIFY':
       default:

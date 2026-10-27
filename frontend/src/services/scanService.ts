@@ -1,7 +1,7 @@
 export type RiskClassification = 
-  | 'KNOWN THREAT DETECTED'
+  | 'SAFE INDICATORS'
   | 'SUSPICIOUS'
-  | 'NO KNOWN THREAT DETECTED'
+  | 'UNSAFE / SPAM'
   | 'UNABLE TO VERIFY';
 
 export type IndicatorSeverity = 'info' | 'low' | 'medium' | 'high' | 'critical';

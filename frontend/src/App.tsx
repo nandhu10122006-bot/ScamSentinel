@@ -144,11 +144,11 @@ export const App: React.FC = () => {
                   <div className="flex items-center gap-3 overflow-hidden">
                     <span
                       className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${
-                        item.classification === 'NO KNOWN THREAT DETECTED'
+                        item.classification === 'SAFE INDICATORS'
                           ? 'bg-emerald-400'
                           : item.classification === 'SUSPICIOUS'
                           ? 'bg-amber-400'
-                          : item.classification === 'KNOWN THREAT DETECTED'
+                          : item.classification === 'UNSAFE / SPAM'
                           ? 'bg-rose-500'
                           : 'bg-slate-400'
                       }`}
@@ -163,11 +163,11 @@ export const App: React.FC = () => {
                     </span>
                     <span
                       className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded border ${
-                        item.classification === 'NO KNOWN THREAT DETECTED'
+                        item.classification === 'SAFE INDICATORS'
                           ? 'border-emerald-500/30 text-emerald-400'
                           : item.classification === 'SUSPICIOUS'
                           ? 'border-amber-500/30 text-amber-400'
-                          : item.classification === 'KNOWN THREAT DETECTED'
+                          : item.classification === 'UNSAFE / SPAM'
                           ? 'border-rose-500/30 text-rose-400'
                           : 'border-slate-500/30 text-slate-400'
                       }`}

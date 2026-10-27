@@ -23,12 +23,12 @@ def test_scan_normal_url():
     response = client.post("/api/scan/url", json={"url": "https://www.wikipedia.org"})
     assert response.status_code == 200
     data = response.json()
-    assert data["classification"] == "NO KNOWN THREAT DETECTED"
+    assert data["classification"] == "SAFE INDICATORS"
     assert data["risk_score"] <= 25
     assert data["is_url"] is True
     assert data["hostname"] == "www.wikipedia.org"
     assert "wikipedia.org" in data["normalized_url"]
-    assert "does not guarantee" in data["explanation"].lower()
+    assert "not a guarantee" in data["explanation"].lower()
 
 
 def test_scan_suspicious_phishing_url():
@@ -96,7 +96,7 @@ def test_scan_qr_endpoint_with_url():
     assert response.status_code == 200
     data = response.json()
     assert data["is_url"] is True
-    assert data["classification"] in ["SUSPICIOUS", "NO KNOWN THREAT DETECTED"]
+    assert data["classification"] in ["SUSPICIOUS", "SAFE INDICATORS"]
     assert "suspicious-bank-login.xyz" in data["normalized_url"]
 
 
@@ -144,7 +144,7 @@ async def test_threat_intelligence_confirmed_threat():
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["classification"] == "KNOWN THREAT DETECTED"
+        assert data["classification"] == "UNSAFE / SPAM"
         assert data["risk_score"] >= 95
         assert "Confirmed threat match detected by Google Web Risk" in data["explanation"]
 
@@ -168,6 +168,6 @@ async def test_threat_intelligence_unavailable_fallback():
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["classification"] == "NO KNOWN THREAT DETECTED"
+        assert data["classification"] == "SAFE INDICATORS"
         assert data["threat_intelligence"]["status"] == "unavailable"
         assert "Live verification unavailable" in data["threat_intelligence"]["summary"]

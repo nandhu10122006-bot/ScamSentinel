@@ -456,7 +456,7 @@ class UrlAnalyzerService:
         # 3. Determine honest security classification
         # Rule 1: Confirmed threat from trusted threat intelligence service
         if threat_intel.status == "confirmed_threat":
-            classification = RiskClassification.KNOWN_THREAT
+            classification = RiskClassification.UNSAFE_SPAM
             final_risk_score = max(heuristic_score, 95)
             explanation = (
                 f"Confirmed threat match detected by {threat_intel.provider}: "
@@ -479,21 +479,21 @@ class UrlAnalyzerService:
                 explanation_parts.append("Threat intelligence database lookup found no known matching threat.")
             explanation = " ".join(explanation_parts)
 
-        # Rule 3: No known threats detected
+        # Rule 3: Safe indicators — no known threats detected
         else:
-            classification = RiskClassification.NO_KNOWN_THREAT
+            classification = RiskClassification.SAFE_INDICATORS
             final_risk_score = heuristic_score
             if threat_intel.checked and threat_intel.status == "no_threat_found":
                 explanation = (
-                    f"No known threat detected for {breakdown.domain}. "
+                    f"Available checks completed without finding known threats or significant warning signs for {breakdown.domain}. "
                     "Live Google Web Risk verification and local heuristic checks found no known threats. "
-                    "Note: This reflects the absence of known threats in checked sources and does not guarantee that the URL is safe."
+                    "Note: This is not a guarantee of safety."
                 )
             else:
                 explanation = (
-                    f"No known threat detected by local heuristic checks for {breakdown.domain}. "
+                    f"Available checks completed without finding known threats or significant warning signs for {breakdown.domain}. "
                     "Note: Live threat intelligence verification was unavailable (GOOGLE_WEB_RISK_API_KEY not configured). "
-                    "This does not guarantee that the URL is safe."
+                    "This is not a guarantee of safety."
                 )
 
         # Final response
