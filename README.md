@@ -1,241 +1,66 @@
-# TrustLens AI 🛡️
+# CyberSentry Threat Intelligence
 
-**TrustLens AI** is an intelligent, full-stack predictive scam and threat intelligence platform designed to inspect URLs and physical/digital QR codes *before* users navigate to them.
+CyberSentry is an evidence-first URL and QR-code risk assessment app. It analyzes URL structure and local indicators, optionally checks configured providers, records findings and provider availability, and generates finding-specific recommendations. It never fetches or opens a submitted destination. An unknown reputation is not classified as safe or malicious.
 
-Built with **FastAPI** (Python) and **React + TypeScript + Vite**, TrustLens AI evaluates destinations using local heuristic telemetry, Shannon entropy analysis, brand impersonation detection, and integration with **Google's Web Risk Lookup API**.
+## Run locally
 
----
+Python 3.12 is recommended.
 
-## 📁 Project Structure
-
-TrustLens AI strictly enforces separation of concerns across its frontend and backend tiers:
-
-```text
-TrustLens-AI/
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── LinkScanner.tsx      # URL inspection input, presets, and Check Link trigger
-│   │   │   ├── QRScanner.tsx        # File drag-and-drop & live webcam QR code decoding
-│   │   │   └── ScanResult.tsx       # Security card, risk score gauge, and indicators
-│   │   ├── services/
-│   │   │   └── scanService.ts       # Type-safe API client communicating with backend
-│   │   ├── App.tsx                  # Single-page application root with tabs and history
-│   │   ├── main.tsx                 # React DOM mount
-│   │   └── index.css                # Tailwind CSS styling and theme definitions
-│   ├── public/                      # Static assets and favicon
-│   ├── package.json                 # Frontend dependencies and build scripts
-│   └── .env.example                 # Example frontend environment configuration
-│
-├── backend/
-│   ├── app/
-│   │   ├── main.py                  # FastAPI application entry point with CORS
-│   │   ├── routes/
-│   │   │   └── scan.py              # /api/scan/url, /api/scan/qr, /api/health
-│   │   ├── services/
-│   │   │   ├── url_analyzer.py      # Unified multi-factor local heuristics engine
-│   │   │   └── threat_intelligence.py # Google Web Risk Lookup API integration
-│   │   └── schemas/
-│   │       └── scan.py              # Pydantic v2 validation and response models
-│   ├── tests/
-│   │   └── test_scan.py             # Pytest unit and integration test suite
-│   ├── requirements.txt             # Python backend dependencies
-│   └── .env.example                 # Example backend environment configuration
-│
-├── .gitignore                       # Git ignore rules for virtualenvs, node_modules, secrets
-└── README.md                        # Documentation and startup guides
+```bash
+python3 -m venv .venv
+. .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 3000 --no-access-log
 ```
 
----
+Open the local server at `http://localhost:3000`. Development/test defaults to `./data/cybersentry.db` (SQLite). Every other `APP_ENV` requires a PostgreSQL `DATABASE_URL`; missing or SQLite DSNs fail closed instead of silently storing production data on ephemeral container disk. For PostgreSQL, set `DATABASE_URL` to a DSN such as `postgresql+psycopg://user:password@host:5432/cybersentry`, then run `alembic upgrade head`. Keep secrets in the runtime environment; never commit `.env`.
 
-## 🔒 Security Principles & Honest Classifications
+To import the reserved-domain test fixture into a local development SQLite database only, run:
 
-1. **Client-Side QR Code Extraction:** Uploaded images and live webcam streams are decoded client-side inside the browser using HTML5 Canvas and `jsQR`. Destinations are extracted without opening or redirecting the user.
-2. **Safe Telemetry & Zero Unrestricted Server Requests:** The backend does **not** execute arbitrary scripts or fetch arbitrary submitted payloads, protecting against SSRF and unauthorized client-side redirects.
-3. **Honest Security Classifications:** Every scan returns one of four explicit classifications:
-   - **`KNOWN THREAT DETECTED`**: A configured, trusted threat-intelligence service (e.g. Google Web Risk) confirms a threat match.
-   - **`SUSPICIOUS`**: Local checks identify warning signs (e.g. brand spoofing, direct IP host, dangerous executable extension), but a confirmed threat has not been established.
-   - **`NO KNOWN THREAT DETECTED`**: The available checks found no known threat. Note: This indicates the absence of known threats in evaluated sources, **not** a guarantee that the URL is safe.
-   - **`UNABLE TO VERIFY`**: Verification could not be completed or the input is a non-URL payload (e.g. plain text notes).
-4. **Separation of Heuristic Estimates:** Local heuristic risk scores ($0 - 100$) are estimates of structural anomaly, never described as mathematical probabilities of malice.
-5. **Credential Isolation:** Frontend contains zero private API keys. `GOOGLE_WEB_RISK_API_KEY` remains strictly in backend environment variables.
+```bash
+python -m app.cli import-sample
+```
 
----
+The fixture uses `.invalid`, is labeled `CyberSentry Test Fixture (LOCAL ONLY)`, and is refused when `APP_ENV` is not `development` or the database is not SQLite. It is not real threat intelligence. To synchronize an authorized configured feed, run `python -m app.cli sync-feeds`.
 
-## 🚀 Quick Start Guide
+## API
 
-### 1. Backend Setup & Startup
+- `POST /api/v1/scans` with JSON `{"url":"https://example.org/path"}`
+- `GET /api/v1/scans?limit=25&offset=0`
+- `GET /api/v1/scans/{scan_id}` and `/api/v1/scans/{scan_id}/report`
+- `DELETE /api/v1/scans/{scan_id}`
+- `POST /api/v1/qr/decode` as multipart form data with a `file` field
+- `GET /api/v1/threats/lookup?url=https%3A%2F%2Fexample.org`
+- `GET /api/v1/threat-feeds/status`
+- `POST /api/v1/admin/threat-feeds/sync` (requires `X-CyberSentry-Admin-Token`)
+- `GET /api/v1/recommendations` and `/api/v1/dashboard/stats`
+- `GET /healthz`
 
-1. Open a terminal and navigate to `backend`:
-   ```bash
-   cd backend
-   ```
+`CYBERSENTRY_ACCESS_TOKEN` protects scan, history, report, lookup and dashboard APIs using `X-CyberSentry-Token` or `Authorization: Bearer ...`. It is optional only for local development and required in every other `APP_ENV`; the production container defaults to `APP_ENV=production` and fails closed without it. Configure a separate `CYBERSENTRY_ADMIN_TOKEN` to enable protected feed sync. The UI saves tokens in the browser's local storage. This is a single-install shared token, not per-user or multi-tenant identity; place a production deployment behind an appropriate identity/access gateway. The admin endpoint is unavailable when no admin token is configured.
 
-2. Create and activate a Python virtual environment:
-   - **Windows (PowerShell):**
-     ```powershell
-     python -m venv .venv
-     .\.venv\Scripts\Activate.ps1
-     ```
-   - **macOS / Linux:**
-     ```bash
-     python3 -m venv .venv
-     source .venv/bin/activate
-     ```
+CORS is disabled unless exact trusted origins are supplied in `TRUSTED_ORIGINS`. All API routes are limited to `RATE_LIMIT_API_REQUESTS_PER_MINUTE` (default 120 per minute per client/process); URL scans and QR decoding have tighter separate limits. These guards are in-process, so deployments with multiple workers/replicas should also enforce edge rate limits.
 
-3. Install required backend packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## Provider configuration
 
-4. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-   *(Optional)* Add your Google Web Risk API key in `backend/.env`:
-   ```env
-   GOOGLE_WEB_RISK_API_KEY=your_google_cloud_api_key_here
-   ```
-   *If omitted, TrustLens AI will honestly report that live threat intelligence is unconfigured and provide complete local heuristic findings.*
+Provider credentials are optional and no real credentials were available to validate live integrations. Provider checks remain `not_configured` until the corresponding API key and authorized-use setting are configured. A configured URL may be disclosed to the provider. Review [provider-specific terms and setup](docs/THREAT_SOURCES.md) before enabling any integration. VirusTotal Public is non-commercial only and limited to 4 requests/minute and 500/day; it is disabled unless `VIRUSTOTAL_USAGE=noncommercial` is explicitly set. For a properly licensed premium account use `VIRUSTOTAL_USAGE=premium`. Google Safe Browsing is non-commercial only; commercial products should use Web Risk, which is not implemented here. URLhaus requires an Auth-Key for feed downloads; configure `URLHAUS_USAGE=noncommercial` or `commercial-authorized` only if your use is allowed. URLhaus sync is limited to no more than once per five minutes and feed scheduling is opt-in. PhishTank/OpenPhish stays disabled pending applicable current license/access review.
 
-5. Start the FastAPI backend server:
-   ```bash
-   uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
-   ```
-   - API Base URL: `http://127.0.0.1:8000`
-   - API Docs (Swagger): `http://127.0.0.1:8000/docs`
-   - Health Check: `http://127.0.0.1:8000/api/health`
+Set `AUTO_FEED_SYNC=true` and `FEED_SYNC_INTERVAL_HOURS` to enable the optional in-process scheduled maintenance loop. Default is off. Feed downloads never run as part of a scan. For multi-replica deployments, use one external scheduler/worker instead of enabling the loop in every replica.
 
-6. Run the automated backend test suite:
-   ```bash
-   pytest tests -v
-   ```
+## Risk and privacy
 
----
+The score is a configurable rule-based index, not a probability. Defaults and finding descriptions are documented in [the scoring model](docs/SCORING.md). `RISK_WEIGHTS_JSON` may override only known finding-code weights with integer values from 0 to 100. The risk classification and confidence are stored separately from the score. Confidence is based on local/provider coverage and reliability.
 
-### 2. Frontend Setup & Startup
+CyberSentry stores the normalized hostname/domain and a SHA-256 fingerprint. It strips fragments and URL credentials from stored destinations and redacts values for sensitive query parameter names. Other URL components may still identify users; set `RETENTION_DAYS` to suit your policy. Old scans are purged by scheduled maintenance and the CLI; users can also delete a scan through the API. Original QR images and raw non-URL QR text are not persisted. The immediate QR response may show extracted content back to the uploader. Provider API calls may transmit the URL when enabled.
 
-1. Open a separate terminal and navigate to `frontend`:
-   ```bash
-   cd frontend
-   ```
+Direct destination fetching, redirect resolution, TLS certificate inspection and arbitrary URL browsing are not implemented. Therefore, CyberSentry does not claim a certificate error based on a scan. HTTPS is transport encryption, not proof of legitimacy.
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+## Tests and container
 
-3. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   ```
-   *(Defaults to `VITE_API_BASE_URL=http://localhost:8000`)*
+```bash
+.venv/bin/pytest -q
+.venv/bin/ruff check app tests alembic
+```
 
-4. Start the frontend development server:
-   ```bash
-   npm run dev
-   ```
-   - Access TrustLens AI in your browser at `http://localhost:5173`.
-
-5. Build for production:
-   ```bash
-   npm run build
-   ```
-
----
-
-## 📡 API Reference
-
-### 1. Health Status
-- **Endpoint:** `GET /api/health`
-- **Response:**
-  ```json
-  {
-    "status": "healthy",
-    "version": "1.0.0",
-    "threat_intelligence_configured": false,
-    "configured_providers": []
-  }
-  ```
-
----
-
-### 2. URL Threat Scan
-- **Endpoint:** `POST /api/scan/url`
-- **Request Body:**
-  ```json
-  {
-    "url": "http://paypal.com.account-update.verify-billing.attacker.xyz/login.php"
-  }
-  ```
-- **Response:**
-  ```json
-  {
-    "target": "http://paypal.com.account-update.verify-billing.attacker.xyz/login.php",
-    "normalized_url": "http://paypal.com.account-update.verify-billing.attacker.xyz/login.php",
-    "hostname": "paypal.com.account-update.verify-billing.attacker.xyz",
-    "is_url": true,
-    "classification": "SUSPICIOUS",
-    "risk_score": 100,
-    "detected_indicators": [
-      {
-        "id": "brand-spoof-paypal",
-        "category": "reputation",
-        "indicator": "Brand Mention in Subdomain/Path (Paypal)",
-        "severity": "critical",
-        "score_impact": 45,
-        "description": "Mentions 'Paypal' in subdomain or path, but registered domain is 'attacker.xyz'."
-      }
-    ],
-    "explanation": "Local checks identified 5 warning sign(s) for attacker.xyz (including Brand Mention in Subdomain/Path (Paypal)). A confirmed threat has not been established by external threat intelligence, but the URL exhibits suspicious characteristics. Live threat intelligence verification was unavailable (GOOGLE_WEB_RISK_API_KEY not configured).",
-    "scan_method": "heuristics_only",
-    "threat_intelligence": {
-      "provider": "Google Web Risk Lookup API",
-      "configured": false,
-      "checked": false,
-      "status": "not_configured",
-      "threat_types": [],
-      "summary": "Live threat intelligence verification unavailable. GOOGLE_WEB_RISK_API_KEY is not configured in backend environment."
-    },
-    "breakdown": {
-      "scheme": "http",
-      "domain": "attacker.xyz",
-      "subdomain": "paypal.com.account-update.verify-billing",
-      "tld": "xyz",
-      "port": null,
-      "path": "/login.php",
-      "query_params_count": 0,
-      "is_ip_address": false,
-      "has_punycode": false,
-      "entropy": 3.12
-    },
-    "timestamp": "2026-10-27T17:15:00Z"
-  }
-  ```
-
----
-
-### 3. QR Content Scan
-- **Endpoint:** `POST /api/scan/qr`
-- **Request Body:**
-  ```json
-  {
-    "qr_content": "https://bit.ly/secure-banking-token"
-  }
-  ```
-- **Response:** Shared `ScanResponse` schema. If a plain text payload is provided, returns `UNABLE TO VERIFY` and clarifies that URL reputation checking cannot be applied to non-URL payloads.
-
----
-
-## 📊 Summary of Capabilities & Limitations
-
-| Capability | Status | Description |
-| :--- | :--- | :--- |
-| **URL Input & Check Link** | ✅ Functional | Validates, normalizes, inspects structural heuristics, queries Web Risk if configured, and displays results. |
-| **QR Image Upload** | ✅ Functional | Client-side decoding using `jsQR` via Canvas without sending images or opening targets. |
-| **QR Webcam Scanning** | ✅ Functional | Continuous camera feed scanning with viewfinder overlay and instant destination analysis. |
-| **Local Heuristics Engine** | ✅ Functional | 15+ vectors: brand spoofing, direct IP hosts, dangerous extensions (`.exe`), high-risk TLDs, entropy, Punycode/IDN, shorteners. |
-| **Google Web Risk Integration** | ✅ Functional | Queries `https://webrisk.googleapis.com/v1/uris:search` with `MALWARE`, `SOCIAL_ENGINEERING`, and `UNWANTED_SOFTWARE`. |
-| **Honest Classifications** | ✅ Functional | Enforces `KNOWN THREAT DETECTED`, `SUSPICIOUS`, `NO KNOWN THREAT DETECTED`, and `UNABLE TO VERIFY`. |
-| **Requires API Key** | ℹ️ Optional | Live Google Web Risk lookup requires a free Google Cloud API key (`GOOGLE_WEB_RISK_API_KEY`). Local heuristics operate 100% offline without any key. |
-| **Limitation** | ⚠️ Note | Plain text QR codes cannot be evaluated for domain reputation and return `UNABLE TO VERIFY`. |
+The test suite uses isolated SQLite fixtures and mocked provider/feed responses. It does not depend on the public feed being stable. The Dockerfile runs as a non-root user, applies Alembic migrations at startup and listens on `PORT` (default 3000). Production persistence requires a durable PostgreSQL service/DSN and appropriate backup, access, rate-limit and secret-management controls.
