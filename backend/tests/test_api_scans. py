@@ -1,0 +1,124 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import select
+
+from app.api import routes
+from app.config import settings
+from app.database import get_db
+from app.main import app
+from app.models import Scan, ScanFinding, ScanProviderResult
+from app.services import scanner
+from app.services.providers import ProviderOutcome
+
+
+@pytest.fixture
+def api_client(session_factory, monkeypatch):
+    def override_get_db():
+        db = session_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    async def no_external(_url):
+        return [
+            ProviderOutcome("Google Safe Browsing", "not_configured", "Not authorized."),
+            ProviderOutcome("VirusTotal", "not_configured", "Not authorized."),
+        ]
+
+    monkeypatch.setattr(scanner, "check_external_providers", no_external)
+    client = TestClient(app)
+    yield client
+    app.dependency_overrides.pop(get_db, None)
+
+
+def test_scan_unknown_history_report_and_deletion_cascade(api_client, session_factory) -> None:
+    created = api_client.post("/api/v1/scans", json={"url": "https://ordinary.example.com/help"})
+    assert created.status_code == 200
+    result = created.json()
+    assert result["risk_category"] == "UNKNOWN"
+    assert 0 <= result["risk_score"] <= 100
+    assert result["confidence_level"] == "low"
+    assert any(item["code"] == "UNKNOWN_REPUTATION" for item in result["findings"])
+    assert all(item["status"] in {"not_configured", "completed", "pending"} for item in result["provider_results"])
+
+    history = api_client.get("/api/v1/scans?limit=10&offset=0")
+    assert history.status_code == 200
+    assert history.json()["total"] == 1
+    scan_id = result["id"]
+
+    report = api_client.get(f"/api/v1/scans/{scan_id}/report")
+    assert report.status_code == 200
+    assert "not proof" in report.text.lower() or "not a guarantee" in report.text.lower() or "not proof" in report.text.lower()
+    assert "did not visit the destination" in report.text.lower()
+    assert "attachment" in report.headers.get("content-disposition", "")
+
+    with session_factory() as db:
+        assert db.scalar(select(ScanFinding.id).where(ScanFinding.scan_id == scan_id)) is not None
+        assert db.scalar(select(ScanProviderResult.id).where(ScanProviderResult.scan_id == scan_id)) is not None
+
+    deleted = api_client.delete(f"/api/v1/scans/{scan_id}")
+    assert deleted.status_code == 204
+    assert api_client.get(f"/api/v1/scans/{scan_id}").status_code == 404
+    with session_factory() as db:
+        assert db.get(Scan, scan_id) is None
+        assert db.scalar(select(ScanFinding.id).where(ScanFinding.scan_id == scan_id)) is None
+        assert db.scalar(select(ScanProviderResult.id).where(ScanProviderResult.scan_id == scan_id)) is None
+
+
+def test_access_and_admin_routes_require_their_own_tokens(api_client, monkeypatch, session_factory) -> None:
+    monkeypatch.setattr(routes, "settings", replace(settings, access_token="read-token", admin_token="admin-token"))
+    monkeypatch.setattr(routes, "SessionLocal", session_factory)
+    assert api_client.get("/api/v1/scans").status_code == 401
+    assert api_client.get("/api/v1/scans", headers={"X-CyberSentry-Token": "read-token"}).status_code == 200
+    assert api_client.post("/api/v1/admin/threat-feeds/sync").status_code == 401
+    assert api_client.post(
+        "/api/v1/admin/threat-feeds/sync", headers={"X-CyberSentry-Admin-Token": "admin-token"}
+    ).status_code == 200
+
+
+def test_production_scan_access_fails_closed_without_token(api_client, monkeypatch) -> None:
+    monkeypatch.setattr(routes, "settings", replace(settings, app_env="production", access_token=None))
+    assert api_client.get("/api/v1/scans").status_code == 503
+    assert api_client.post("/api/v1/scans", json={"url": "https://example.com/"}).status_code == 503
+
+
+def test_only_http_and_https_scans_are_accepted(api_client) -> None:
+    response = api_client.post("/api/v1/scans", json={"url": "javascript:alert(1)"})
+    assert response.status_code == 422
+
+
+def test_partial_provider_failure_stays_unknown_in_a_stored_scan(api_client, monkeypatch) -> None:
+    async def partial_results(_url):
+        return [
+            ProviderOutcome("Google Safe Browsing", "completed", "No match.", configured=True),
+            ProviderOutcome("VirusTotal", "unavailable", "Provider timed out.", configured=True, error_code="timeout"),
+        ]
+
+    monkeypatch.setattr(scanner, "check_external_providers", partial_results)
+    response = api_client.post("/api/v1/scans", json={"url": "https://ordinary.example.com/"})
+    assert response.status_code == 200
+    result = response.json()
+    assert result["risk_category"] == "UNKNOWN"
+    assert any(item["code"] == "UNKNOWN_REPUTATION" for item in result["findings"])
+    assert {item["status"] for item in result["provider_results"] if item["provider_name"] in {"Google Safe Browsing", "VirusTotal"}} == {"completed", "unavailable"}
+
+
+def test_global_api_rate_limit_covers_read_routes(api_client, monkeypatch) -> None:
+    from app import main as main_module
+
+    main_module.limiter._events.clear()
+    monkeypatch.setattr(
+        main_module,
+        "settings",
+        replace(main_module.settings, api_requests_per_minute=1),
+    )
+    assert api_client.get("/api/v1/recommendations").status_code == 200
+    assert api_client.get("/api/v1/recommendations").status_code == 429
+    main_module.limiter._events.clear()
